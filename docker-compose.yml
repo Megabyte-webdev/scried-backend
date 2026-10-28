@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: scried
+      POSTGRES_USER: scried
+      POSTGRES_PASSWORD: scried_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - scried_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scried -d scried"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "scried_dev_redis_password"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - scried_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "scried_dev_redis_password", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  scried_pgdata:
+  scried_redisdata:
