@@ -5,9 +5,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
 use subtle::ConstantTimeEq;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateProgram {
     pub name: String,
     pub slug: String,
@@ -18,7 +19,7 @@ pub struct CreateProgram {
     pub end_at: Option<DateTime<Utc>>,
     pub status: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateEvent {
     pub name: String,
     pub description: Option<String>,
@@ -27,15 +28,16 @@ pub struct CreateEvent {
     pub checkin_opens_at: Option<DateTime<Utc>>,
     pub checkin_closes_at: Option<DateTime<Utc>>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CheckInRequest { pub qr_token: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PaperCheckInRequest {
     pub email: String,
     pub note: Option<String>,
     pub method: Option<String>,
 }
 
+#[utoipa::path(post, path = "/api/v1/programs", tag = "Programs and events", summary = "Create a program", request_body = CreateProgram, security(("bearerAuth" = [])), responses((status = 200, description = "Program created")))]
 pub async fn create_program(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -58,6 +60,7 @@ pub async fn create_program(
     Ok(Json(json!({"status":"success","data":{"id":id,"name":row.try_get::<String,_>("name").map_err(|_| AppError::Internal)?,"slug":row.try_get::<String,_>("slug").map_err(|_| AppError::Internal)?,"status":row.try_get::<String,_>("status").map_err(|_| AppError::Internal)?,"created_at":row.try_get::<DateTime<Utc>,_>("created_at").map_err(|_| AppError::Internal)?}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/programs/{program_id}/events", tag = "Programs and events", summary = "Create an event within a program", params(("program_id" = Uuid, Path)), request_body = CreateEvent, security(("bearerAuth" = [])), responses((status = 200, description = "Event created")))]
 pub async fn create_event(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -81,6 +84,7 @@ pub async fn create_event(
     Ok(Json(json!({"status":"success","data":{"id":event_id,"program_id":program_id,"name":row.try_get::<String,_>("name").map_err(|_| AppError::Internal)?,"starts_at":row.try_get::<DateTime<Utc>,_>("starts_at").map_err(|_| AppError::Internal)?,"status":row.try_get::<String,_>("status").map_err(|_| AppError::Internal)?,"qr_token":qr_token,"qr_instruction":"Render a QR code containing this event ID and token. Show the token only to authorised staff when creating the event."}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/events/{event_id}/check-in", tag = "Programs and events", summary = "Check in using an event QR token", params(("event_id" = Uuid, Path)), request_body = CheckInRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Check-in recorded")))]
 pub async fn check_in(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -115,6 +119,7 @@ pub async fn check_in(
     }
 }
 
+#[utoipa::path(post, path = "/api/v1/events/{event_id}/paper-check-ins", tag = "Programs and events", summary = "Record an assisted paper check-in", params(("event_id" = Uuid, Path)), request_body = PaperCheckInRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Paper check-in recorded")))]
 pub async fn paper_check_in(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -147,6 +152,7 @@ fn map_conflict(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db_error) = &error { if db_error.code().as_deref() == Some("23505") { return AppError::Conflict; } }
     AppError::Database(error)
 }
+#[utoipa::path(post, path = "/api/v1/programs/{program_id}/opportunities/{opportunity_id}", tag = "Programs and events", summary = "Link an opportunity to a program", params(("program_id" = Uuid, Path), ("opportunity_id" = Uuid, Path)), security(("bearerAuth" = [])), responses((status = 200, description = "Opportunity linked")))]
 pub async fn link_opportunity(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,

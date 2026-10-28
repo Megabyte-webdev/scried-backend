@@ -5,9 +5,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
 use subtle::ConstantTimeEq;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateApplication {
     pub opportunity_id: Uuid,
     pub full_name: Option<String>,
@@ -21,7 +22,7 @@ pub struct CreateApplication {
     pub age_range: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateGuestApplication {
     pub opportunity_id: Uuid,
     pub full_name: String,
@@ -38,9 +39,10 @@ pub struct CreateGuestApplication {
     pub consent_version: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct GuestContinueRequest { pub access_token: String }
 
+#[utoipa::path(post, path = "/api/v1/applications", tag = "Applications", summary = "Apply to an opportunity as the signed-in user", request_body = CreateApplication, security(("bearerAuth" = [])), responses((status = 200, description = "Application created")))]
 pub async fn create_authenticated(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -75,6 +77,7 @@ pub async fn create_authenticated(
     Ok(Json(json!({"status":"success","data":{"application_id":application_id,"opportunity_id":input.opportunity_id,"opportunity_title":opportunity.0,"stage":row.try_get::<String,_>("stage").map_err(|_| AppError::Internal)?,"registered_at":row.try_get::<chrono::DateTime<Utc>,_>("registered_at").map_err(|_| AppError::Internal)?}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/applications/guest", tag = "Applications", summary = "Create a guest application", request_body = CreateGuestApplication, responses((status = 200, description = "Guest application and continuation token created")))]
 pub async fn create_guest(
     State(state): State<AppState>,
     Json(input): Json<CreateGuestApplication>,
@@ -115,6 +118,7 @@ pub async fn create_guest(
     Ok(Json(json!({"status":"success","data":{"application_id":application_id,"opportunity_title":opportunity_title,"registered_at":row.try_get::<chrono::DateTime<Utc>,_>("registered_at").map_err(|_| AppError::Internal)?,"guest_access_token":token,"message":"Save this token securely; it is required to continue to the official opportunity link."}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/applications/{application_id}/continue", tag = "Applications", summary = "Continue to the official opportunity as the owner", params(("application_id" = Uuid, Path)), security(("bearerAuth" = [])), responses((status = 200, description = "Official opportunity URL returned")))]
 pub async fn continue_authenticated(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -135,6 +139,7 @@ pub async fn continue_authenticated(
     Ok(Json(json!({"status":"success","data":{"application_id":application_id,"official_url":url,"clicked_through_at":clicked_through_at}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/applications/guest/{application_id}/continue", tag = "Applications", summary = "Continue a guest application to the official opportunity", params(("application_id" = Uuid, Path)), request_body = GuestContinueRequest, responses((status = 200, description = "Official opportunity URL returned")))]
 pub async fn continue_guest(
     State(state): State<AppState>,
     Path(application_id): Path<Uuid>,
@@ -160,6 +165,7 @@ pub async fn continue_guest(
     Ok(Json(json!({"status":"success","data":{"application_id":application_id,"official_url":url,"clicked_through_at":clicked_through_at}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/claim-guest-applications", tag = "Applications", summary = "Link eligible guest applications to the verified account", security(("bearerAuth" = [])), responses((status = 200, description = "Eligible guest applications linked")))]
 pub async fn claim_guest_applications(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -198,6 +204,7 @@ fn map_conflict(error: sqlx::Error) -> AppError {
     AppError::Database(error)
 }
 
+#[utoipa::path(get, path = "/api/v1/applications/me", tag = "Applications", summary = "List the current user's applications", security(("bearerAuth" = [])), responses((status = 200, description = "Applications returned")))]
 pub async fn list_mine(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -220,6 +227,7 @@ pub async fn list_mine(
     Ok(Json(json!({"status":"success","data":{"items":items,"page":page,"page_size":page_size,"total":total}})))
 }
 
+#[utoipa::path(get, path = "/api/v1/applications/{application_id}", tag = "Applications", summary = "Get an application and its proof status", params(("application_id" = Uuid, Path)), security(("bearerAuth" = [])), responses((status = 200, description = "Application details returned")))]
 pub async fn get_one(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,

@@ -1,4 +1,5 @@
 pub mod applications;
+pub mod api_docs;
 pub mod auth;
 pub mod config;
 pub mod error;
@@ -28,6 +29,8 @@ use tower_http::{
 };
 use http::{header, HeaderValue, Method};
 use crate::{middleware::{auth_middleware, rate_limit_middleware}, state::AppState};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 pub fn build_router(state: AppState) -> anyhow::Result<Router> {
     let allowed_origins = state.config.cors_allowed_origins
@@ -47,7 +50,7 @@ pub fn build_router(state: AppState) -> anyhow::Result<Router> {
         .route("/opportunities/{slug}", get(opportunities::get_public))
         .route("/applications/guest", post(applications::create_guest))
         .route("/applications/guest/{application_id}/continue", post(applications::continue_guest))
-        .route("/health/live", get(|| async { axum::Json(serde_json::json!({"status":"ok"})) }))
+        .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
         ;
 
@@ -81,6 +84,7 @@ pub fn build_router(state: AppState) -> anyhow::Result<Router> {
         .route_layer(from_fn_with_state(state.clone(), auth_middleware));
 
     let app = Router::new()
+        .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", api_docs::ApiDoc::openapi()))
         .nest("/api/v1", public_api.merge(protected_api))
         .layer(from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(RequestBodyLimitLayer::new(5 * 1024 * 1024 + 128 * 1024))
@@ -103,7 +107,25 @@ pub fn build_router(state: AppState) -> anyhow::Result<Router> {
     Ok(app)
 }
 
-async fn health_ready(
+#[utoipa::path(
+    get,
+    path = "/api/v1/health/live",
+    tag = "Health",
+    summary = "Check API liveness",
+    responses((status = 200, description = "The API process is running"))
+)]
+pub async fn health_live() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({"status":"ok"}))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/health/ready",
+    tag = "Health",
+    summary = "Check API and dependency readiness",
+    responses((status = 200, description = "PostgreSQL and Redis are available"))
+)]
+pub async fn health_ready(
     axum::extract::State(state): axum::extract::State<AppState>,
 ) -> Result<axum::Json<serde_json::Value>, crate::error::AppError> {
     sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&state.db).await?;
@@ -111,4 +133,3 @@ async fn health_ready(
     let _: String = redis::cmd("PING").query_async(&mut redis).await.map_err(|_| crate::error::AppError::Unavailable)?;
     Ok(axum::Json(serde_json::json!({"status":"ready"})))
 }
-

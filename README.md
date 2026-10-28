@@ -52,6 +52,11 @@ Requirements: a recent stable Rust toolchain, Docker with Compose, and `openssl`
 
    Readiness checks both PostgreSQL and Redis: `GET http://localhost:8080/api/v1/health/ready`.
 
+   Interactive API documentation is available at `http://localhost:8080/docs`; the OpenAPI
+   document is at `http://localhost:8080/api-docs/openapi.json`. In Swagger UI, use **Authorize**
+   to enter a bearer access token for protected endpoints. Never put real credentials or tokens
+   into the API documentation or commit them to the repository.
+
 4. In **terminal 2**, bootstrap the first administrator after the migration has run. Set these environment variables in that shell (do not commit them): `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_PASSWORD` (12–128 bytes), then run:
 
    ```bash

@@ -11,9 +11,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
 use subtle::ConstantTimeEq;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegisterRequest {
     pub email: String,
     pub password: String,
@@ -31,20 +32,21 @@ pub struct RegisterRequest {
     pub matriculation_number: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LoginRequest { pub email: String, pub password: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RefreshRequest { pub refresh_token: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct VerifyEmailRequest { pub token: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PasswordResetRequest { pub email: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ResetPasswordRequest { pub token: String, pub new_password: String }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AssignRoleRequest { pub role_code: String }
 
 
+#[utoipa::path(post, path = "/api/v1/auth/register", tag = "Authentication", summary = "Register a student account", request_body = RegisterRequest, responses((status = 200, description = "Account created")))]
 pub async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -130,6 +132,7 @@ pub async fn register(
     })))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/login", tag = "Authentication", summary = "Sign in and create a session", request_body = LoginRequest, responses((status = 200, description = "Access and refresh tokens returned")))]
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -163,6 +166,7 @@ pub async fn login(
     })))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/refresh", tag = "Authentication", summary = "Rotate a refresh token", request_body = RefreshRequest, responses((status = 200, description = "Tokens rotated")))]
 pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -202,6 +206,7 @@ pub async fn refresh(
     Ok(Json(json!({"status":"success","data":{"access_token":access,"token_type":"Bearer","expires_in":state.config.access_token_ttl_seconds.clamp(60,3600),"refresh_token":new_refresh}})))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/logout", tag = "Authentication", summary = "Revoke the current session", security(("bearerAuth" = [])), responses((status = 200, description = "Session revoked")))]
 pub async fn logout(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -211,6 +216,7 @@ pub async fn logout(
     Ok(Json(json!({"status":"success","message":"Session revoked"})))
 }
 
+#[utoipa::path(get, path = "/api/v1/auth/me", tag = "Authentication", summary = "Get the current account", security(("bearerAuth" = [])), responses((status = 200, description = "Current account")))]
 pub async fn me(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -241,6 +247,7 @@ pub async fn me(
     }})))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/verify-email", tag = "Authentication", summary = "Verify an email address", request_body = VerifyEmailRequest, responses((status = 200, description = "Email verified")))]
 pub async fn verify_email(
     State(state): State<AppState>,
     Json(input): Json<VerifyEmailRequest>,
@@ -268,6 +275,7 @@ pub async fn verify_email(
     Ok(Json(json!({"status":"success","message":"Email verified. Eligible guest applications have been linked."})))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/request-password-reset", tag = "Authentication", summary = "Request a password reset email", request_body = PasswordResetRequest, responses((status = 200, description = "Generic response; does not reveal whether the account exists")))]
 pub async fn request_password_reset(
     State(state): State<AppState>,
     Json(input): Json<PasswordResetRequest>,
@@ -291,6 +299,7 @@ pub async fn request_password_reset(
     Ok(Json(json!({"status":"success","message":"If the account exists, password-reset instructions will be sent."})))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/reset-password", tag = "Authentication", summary = "Set a new password with a reset token", request_body = ResetPasswordRequest, responses((status = 200, description = "Password updated")))]
 pub async fn reset_password(
     State(state): State<AppState>,
     Json(input): Json<ResetPasswordRequest>,
@@ -312,7 +321,7 @@ pub async fn reset_password(
     Ok(Json(json!({"status":"success","message":"Password updated. Please sign in again."})))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PublishConsentDocumentsRequest {
     pub version: String,
     pub privacy_notice_text: String,
@@ -320,6 +329,7 @@ pub struct PublishConsentDocumentsRequest {
 }
 
 /// Public endpoint used by web/mobile clients to render the exact consent wording.
+#[utoipa::path(get, path = "/api/v1/consent-documents/current", tag = "Consent", summary = "Get the current privacy notice and terms", responses((status = 200, description = "Current consent documents")))]
 pub async fn current_consent_documents(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -335,6 +345,7 @@ pub async fn current_consent_documents(
 }
 
 /// Admin publishes immutable, server-owned consent wording. A client may submit only the version.
+#[utoipa::path(post, path = "/api/v1/admin/consent-documents", tag = "Consent", summary = "Publish versioned consent wording", request_body = PublishConsentDocumentsRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Consent documents published")))]
 pub async fn publish_consent_documents(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -371,6 +382,7 @@ fn validate_consent_version(value: &str) -> Result<String, AppError> {
     Ok(version.to_string())
 }
 
+#[utoipa::path(post, path = "/api/v1/admin/users/{user_id}/roles", tag = "Administration", summary = "Assign a role to a user", params(("user_id" = Uuid, Path)), request_body = AssignRoleRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Role assigned")))]
 pub async fn assign_role(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -437,7 +449,7 @@ fn map_unique_conflict(error: sqlx::Error) -> AppError {
     AppError::Database(error)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ProfileUpdate {
     pub full_name: Option<String>,
     pub whatsapp_number: Option<String>,
@@ -451,9 +463,10 @@ pub struct ProfileUpdate {
     pub matriculation_number: Option<String>,
     pub interests: Option<Vec<String>>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct DeleteAccountRequest { pub password: String }
 
+#[utoipa::path(patch, path = "/api/v1/auth/me", tag = "Authentication", summary = "Update the current profile", request_body = ProfileUpdate, security(("bearerAuth" = [])), responses((status = 200, description = "Profile updated")))]
 pub async fn update_me(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -487,6 +500,7 @@ pub async fn update_me(
     Ok(Json(json!({"status":"success","message":"Profile updated"})))
 }
 
+#[utoipa::path(get, path = "/api/v1/auth/me/export", tag = "Authentication", summary = "Export the current user's personal data", security(("bearerAuth" = [])), responses((status = 200, description = "Personal data export")))]
 pub async fn export_me(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -524,6 +538,7 @@ pub async fn export_me(
     }})))
 }
 
+#[utoipa::path(delete, path = "/api/v1/auth/me", tag = "Authentication", summary = "Request account deletion", request_body = DeleteAccountRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Account deletion processed")))]
 pub async fn delete_me(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -543,9 +558,10 @@ pub async fn delete_me(
     Ok(Json(json!({"status":"success","message":"Personal account details have been anonymised and active sessions revoked. Aggregated program records are retained."})))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct AdminAnonymiseRequest { pub reason: String }
 
+#[utoipa::path(post, path = "/api/v1/admin/users/{user_id}/anonymise", tag = "Administration", summary = "Anonymise a user account", params(("user_id" = Uuid, Path)), request_body = AdminAnonymiseRequest, security(("bearerAuth" = [])), responses((status = 200, description = "User anonymised")))]
 pub async fn admin_anonymise_user(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -626,6 +642,7 @@ async fn anonymise_user_data(
     Ok(())
 }
 
+#[utoipa::path(get, path = "/api/v1/admin/audit-logs", tag = "Administration", summary = "List audit records", security(("bearerAuth" = [])), responses((status = 200, description = "Audit log entries")))]
 pub async fn list_audit_logs(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -651,6 +668,7 @@ pub async fn list_audit_logs(
     Ok(Json(json!({"status":"success","data":{"items":items,"page":page,"page_size":page_size,"total":total}})))
 }
 
+#[utoipa::path(delete, path = "/api/v1/admin/users/{user_id}/roles/{role_code}", tag = "Administration", summary = "Remove a role from a user", params(("user_id" = Uuid, Path), ("role_code" = String, Path)), security(("bearerAuth" = [])), responses((status = 200, description = "Role removed")))]
 pub async fn remove_role(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,

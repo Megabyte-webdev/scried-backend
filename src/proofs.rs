@@ -6,11 +6,20 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::path::{Path as FsPath, PathBuf};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct VerificationDecision { pub decision: String, pub note: Option<String> }
 
+#[derive(ToSchema)]
+pub struct UploadProofRequest {
+    pub kind: String,
+    #[schema(value_type = String, format = Binary)]
+    pub file: String,
+}
+
+#[utoipa::path(post, path = "/api/v1/applications/{application_id}/proofs", tag = "Proofs", summary = "Upload private evidence for an application", params(("application_id" = Uuid, Path)), request_body(content = UploadProofRequest, content_type = "multipart/form-data"), security(("bearerAuth" = [])), responses((status = 200, description = "Proof uploaded")))]
 pub async fn upload(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -61,6 +70,7 @@ pub async fn upload(
     Ok(Json(json!({"status":"success","message":"Proof uploaded and queued for review","data":{"id":row.try_get::<Uuid,_>("id").map_err(|_| AppError::Internal)?,"application_id":application_id,"kind":kind,"status":row.try_get::<String,_>("status").map_err(|_| AppError::Internal)?,"created_at":row.try_get::<chrono::DateTime<Utc>,_>("created_at").map_err(|_| AppError::Internal)?}})))
 }
 
+#[utoipa::path(get, path = "/api/v1/proofs/{proof_id}/download", tag = "Proofs", summary = "Download an authorized private proof file", params(("proof_id" = Uuid, Path)), security(("bearerAuth" = [])), responses((status = 200, description = "Private proof file returned")))]
 pub async fn download(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
@@ -93,6 +103,7 @@ pub async fn download(
     Ok(response)
 }
 
+#[utoipa::path(post, path = "/api/v1/proofs/{proof_id}/decision", tag = "Proofs", summary = "Record a proof verification decision", params(("proof_id" = Uuid, Path)), request_body = VerificationDecision, security(("bearerAuth" = [])), responses((status = 200, description = "Verification decision recorded")))]
 pub async fn decide(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -171,6 +182,7 @@ pub async fn delete_private_file(root: &FsPath, key: &str) -> Result<(), AppErro
     }
 }
 
+#[utoipa::path(get, path = "/api/v1/proofs/queue", tag = "Proofs", summary = "List proofs awaiting review", security(("bearerAuth" = [])), responses((status = 200, description = "Proof review queue returned")))]
 pub async fn queue(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,

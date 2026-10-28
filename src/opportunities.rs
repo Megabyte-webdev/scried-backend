@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -15,7 +16,7 @@ pub struct ListQuery {
     pub search: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateOpportunity {
     pub title: String,
     pub slug: String,
@@ -29,7 +30,7 @@ pub struct CreateOpportunity {
     pub value_ngn: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateOpportunity {
     pub title: Option<String>,
     pub summary: Option<String>,
@@ -41,6 +42,19 @@ pub struct UpdateOpportunity {
     pub value_ngn: Option<i64>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/opportunities",
+    tag = "Opportunities",
+    summary = "List published opportunities",
+    params(
+        ("page" = Option<i64>, Query, description = "Page number, starting at 1"),
+        ("page_size" = Option<i64>, Query, description = "Page size, up to 50"),
+        ("category" = Option<String>, Query),
+        ("search" = Option<String>, Query)
+    ),
+    responses((status = 200, description = "Published opportunities returned"))
+)]
 pub async fn list_public(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
@@ -75,6 +89,7 @@ pub async fn list_public(
     Ok(Json(json!({"status":"success","data":{"items":items,"page":page,"page_size":page_size,"total":total}})))
 }
 
+#[utoipa::path(get, path = "/api/v1/opportunities/{slug}", tag = "Opportunities", summary = "Get a published opportunity", params(("slug" = String, Path)), responses((status = 200, description = "Opportunity details returned")))]
 pub async fn get_public(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -98,6 +113,7 @@ pub async fn get_public(
     }})))
 }
 
+#[utoipa::path(post, path = "/api/v1/admin/opportunities", tag = "Opportunities", summary = "Create an opportunity", request_body = CreateOpportunity, security(("bearerAuth" = [])), responses((status = 200, description = "Opportunity created")))]
 pub async fn create(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -120,6 +136,7 @@ pub async fn create(
     Ok(Json(json!({"status":"success","data":{"id":id,"title":row.try_get::<String,_>("title").map_err(|_| AppError::Internal)?,"slug":row.try_get::<String,_>("slug").map_err(|_| AppError::Internal)?,"status":row.try_get::<String,_>("status").map_err(|_| AppError::Internal)?,"created_at":row.try_get::<DateTime<Utc>,_>("created_at").map_err(|_| AppError::Internal)?}})))
 }
 
+#[utoipa::path(patch, path = "/api/v1/admin/opportunities/{opportunity_id}", tag = "Opportunities", summary = "Update an opportunity", params(("opportunity_id" = Uuid, Path)), request_body = UpdateOpportunity, security(("bearerAuth" = [])), responses((status = 200, description = "Opportunity updated")))]
 pub async fn update(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -170,6 +187,20 @@ fn map_conflict(error: sqlx::Error) -> AppError {
     AppError::Database(error)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/opportunities",
+    tag = "Opportunities",
+    summary = "List opportunities for staff",
+    params(
+        ("page" = Option<i64>, Query, description = "Page number, starting at 1"),
+        ("page_size" = Option<i64>, Query, description = "Page size, up to 100"),
+        ("status" = Option<String>, Query, description = "Filter by draft, published, or archived"),
+        ("search" = Option<String>, Query, description = "Search title or slug")
+    ),
+    security(("bearerAuth" = [])),
+    responses((status = 200, description = "Opportunity records returned"))
+)]
 pub async fn list_admin(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,

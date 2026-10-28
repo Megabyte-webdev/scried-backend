@@ -19,6 +19,25 @@ pub struct ReportFilters {
     pub course: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/reports/opportunities/{opportunity_id}/funnel",
+    tag = "Reports",
+    summary = "Get application funnel metrics",
+    params(
+        ("opportunity_id" = Uuid, Path),
+        ("from" = Option<DateTime<Utc>>, Query),
+        ("to" = Option<DateTime<Utc>>, Query),
+        ("quarter" = Option<String>, Query, description = "Calendar quarter, for example 2026-Q3"),
+        ("school" = Option<String>, Query),
+        ("state" = Option<String>, Query),
+        ("level" = Option<String>, Query),
+        ("age_range" = Option<String>, Query),
+        ("course" = Option<String>, Query)
+    ),
+    security(("bearerAuth" = [])),
+    responses((status = 200, description = "Funnel report returned"))
+)]
 pub async fn funnel(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
@@ -89,6 +108,25 @@ pub async fn funnel(
     }})))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/reports/opportunities/{opportunity_id}/applications.csv",
+    tag = "Reports",
+    summary = "Export opportunity applications as CSV",
+    params(
+        ("opportunity_id" = Uuid, Path),
+        ("from" = Option<DateTime<Utc>>, Query),
+        ("to" = Option<DateTime<Utc>>, Query),
+        ("quarter" = Option<String>, Query, description = "Calendar quarter, for example 2026-Q3"),
+        ("school" = Option<String>, Query),
+        ("state" = Option<String>, Query),
+        ("level" = Option<String>, Query),
+        ("age_range" = Option<String>, Query),
+        ("course" = Option<String>, Query)
+    ),
+    security(("bearerAuth" = [])),
+    responses((status = 200, description = "CSV report returned", content_type = "text/csv"))
+)]
 pub async fn applications_csv(
     State(state): State<AppState>,
     Extension(actor): Extension<CurrentUser>,
