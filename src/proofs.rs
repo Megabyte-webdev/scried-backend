@@ -53,17 +53,21 @@ pub async fn upload(
     let (mime, extension) = detect_allowed_file(&bytes).ok_or_else(|| AppError::Validation("Only genuine PDF, PNG, and JPEG files are accepted".to_string()))?;
     let safe_name = sanitize_filename(&incoming_name);
     let id = Uuid::new_v4();
-    let object_key = format!("{}/{}.{}", application_id, id, extension);
-    let path = safe_storage_path(&state.config.private_storage_dir, &object_key)?;
-    if let Some(parent) = path.parent() { tokio::fs::create_dir_all(parent).await?; }
-    tokio::fs::write(&path, &bytes).await?;
+    let object_key = state.proof_storage
+        .store(application_id, id, extension, mime, &bytes)
+        .await?;
     let digest = Sha256::digest(&bytes).to_vec();
     let insert = sqlx::query("INSERT INTO proofs(id,application_id,uploaded_by,kind,original_filename,mime_type,size_bytes,object_key,sha256) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,status,created_at")
         .bind(id).bind(application_id).bind(user.user_id).bind(&kind).bind(&safe_name).bind(mime).bind(bytes.len() as i64).bind(&object_key).bind(digest)
         .fetch_one(&state.db).await;
     let row = match insert {
         Ok(row) => row,
-        Err(err) => { let _ = tokio::fs::remove_file(&path).await; return Err(map_conflict(err)); }
+        Err(err) => {
+            if let Err(storage_error) = state.proof_storage.delete(&object_key).await {
+                tracing::error!(proof_id = %id, error = %storage_error, "failed to remove proof after database insert failed");
+            }
+            return Err(map_conflict(err));
+        }
     };
     sqlx::query("INSERT INTO audit_logs(actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'proof.uploaded','proof',$2,$3)")
         .bind(user.user_id).bind(id.to_string()).bind(json!({"application_id":application_id,"kind":kind,"size_bytes":bytes.len()})).execute(&state.db).await?;
@@ -85,8 +89,7 @@ pub async fn download(
     let deleted_at: Option<chrono::DateTime<Utc>> = row.try_get("storage_deleted_at").map_err(|_| AppError::Internal)?;
     if deleted_at.is_some() { return Err(AppError::NotFound); }
     let object_key: String = row.try_get("object_key").map_err(|_| AppError::Internal)?;
-    let path = safe_storage_path(&state.config.private_storage_dir, &object_key)?;
-    let bytes = tokio::fs::read(path).await.map_err(|_| AppError::NotFound)?;
+    let bytes = state.proof_storage.read(&object_key).await?;
     let mime: String = row.try_get("mime_type").map_err(|_| AppError::Internal)?;
     let filename: String = row.try_get("original_filename").map_err(|_| AppError::Internal)?;
     let content_type = HeaderValue::from_str(&mime).map_err(|_| AppError::Internal)?;
@@ -173,15 +176,6 @@ fn map_conflict(error: sqlx::Error) -> AppError {
 }
 
 
-pub async fn delete_private_file(root: &FsPath, key: &str) -> Result<(), AppError> {
-    let path = safe_storage_path(root, key)?;
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(AppError::from(error)),
-    }
-}
-
 #[utoipa::path(get, path = "/api/v1/proofs/queue", tag = "Proofs", summary = "List proofs awaiting review", security(("bearerAuth" = [])), responses((status = 200, description = "Proof review queue returned")))]
 pub async fn queue(
     State(state): State<AppState>,
@@ -211,7 +205,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64, AppError> {
     for row in rows {
         let id: Uuid = row.try_get("id").map_err(|_| AppError::Internal)?;
         let key: String = row.try_get("object_key").map_err(|_| AppError::Internal)?;
-        match delete_private_file(&state.config.private_storage_dir, &key).await {
+        match state.proof_storage.delete(&key).await {
             Ok(()) => {
                 sqlx::query("UPDATE proofs SET storage_deleted_at=now(),object_key='deleted/'||id::text,original_filename='deleted',sha256=decode(repeat('00',32),'hex') WHERE id=$1 AND storage_deleted_at IS NULL")
                     .bind(id).execute(&state.db).await?;

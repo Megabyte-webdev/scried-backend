@@ -1,4 +1,4 @@
-use scried_backend::{build_router, config::Config, state::AppState};
+use scried_backend::{build_router, config::Config, proof_storage::ProofStorage, state::AppState};
 use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, time::Duration};
 use tracing_subscriber::EnvFilter;
@@ -26,12 +26,12 @@ async fn main() -> anyhow::Result<()> {
 
     let redis_client = redis::Client::open(config.redis_url.clone())?;
     let redis = redis::aio::ConnectionManager::new(redis_client).await?;
-    let private_root = config.private_storage_dir.clone();
-    tokio::fs::create_dir_all(&private_root).await?;
+    let proof_storage = ProofStorage::new(&config)?;
+    proof_storage.initialize().await?;
 
     let host = config.host.clone();
     let port = config.port;
-    let state = AppState::new(db, redis, config);
+    let state = AppState::new(db, redis, config, proof_storage);
     let retention_state = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5 * 60));

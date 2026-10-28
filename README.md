@@ -85,6 +85,8 @@ Requirements: a recent stable Rust toolchain, Docker with Compose, and `openssl`
 
 A container image can be built with `docker build -t scried-backend .`. Supply production secrets at runtime from a secret manager; do not embed them in the image.
 
+For Render, configure the service's environment variables in the Render dashboard. To store private proof uploads in Cloudinary instead of the container filesystem, set `STORAGE_BACKEND=cloudinary` and add `CLOUDINARY_URL` using the connection URL from your Cloudinary console. The service uploads proof assets as **authenticated** assets and proxies authorized downloads through the API; do not change them to public assets. Keep `CLOUDINARY_URL` secret and never commit it. The default `local` backend is intended for development; container-local files can disappear when an instance is replaced or redeployed.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -100,6 +102,8 @@ A container image can be built with `docker build -t scried-backend .`. Supply p
 | `DATABASE_MAX_CONNECTIONS` | Pool maximum; clamped to 5–100 |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated exact browser origins, no wildcard |
 | `PRIVATE_STORAGE_DIR` | Private local storage root; development only |
+| `STORAGE_BACKEND` | Proof storage: `local` (default) or `cloudinary` |
+| `CLOUDINARY_URL` | Required when `STORAGE_BACKEND=cloudinary`; Cloudinary connection URL, configure as a deployment secret |
 | `MAX_UPLOAD_BYTES` | Upload limit; code caps at 5 MiB |
 | `TRUST_PROXY_HEADERS` | Set `true` only if a trusted ingress **overwrites** `X-Forwarded-For`; otherwise leave `false` |
 

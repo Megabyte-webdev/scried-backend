@@ -608,7 +608,7 @@ async fn anonymise_user_data(
     let mut removed_proof_count = 0_u64;
     for proof in proof_rows {
         let object_key: String = proof.try_get("object_key").map_err(|_| AppError::Internal)?;
-        crate::proofs::delete_private_file(&state.config.private_storage_dir, &object_key).await?;
+        state.proof_storage.delete(&object_key).await?;
         removed_proof_count += 1;
     }
 

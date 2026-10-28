@@ -7,6 +7,7 @@ pub mod events;
 pub mod middleware;
 pub mod opportunities;
 pub mod proofs;
+pub mod proof_storage;
 pub mod reports;
 pub mod rbac;
 pub mod security;
