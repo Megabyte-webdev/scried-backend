@@ -194,22 +194,27 @@ migrations/0001_initial.sql
 src/bin/bootstrap_admin.rs
 ```
 
-## Render staging deployment
+## Render deployment
 
-A staging Blueprint is included at `render.yaml`. It defines a Docker web service (`scried-api-test`), a Render Postgres database, and a private-network Render Key Value instance in Frankfurt. The included free plans are for disposable integration testing only; free Postgres has a 1 GB limit and expires after 30 days, and free Key Value data does not persist. Free web services also spin down after inactivity and have no shell or persistent disk access. The API stores proof files on the local filesystem, which is ephemeral on a normal Render web service. Do not use this setup for real student records or evidence.
+The API applies SQLx migrations at startup, but it does **not** create an administrator automatically. This repository does not currently include a Render Blueprint (`render.yaml`) or an automatic admin-creation deploy hook. The Docker image runs only the API binary; the bootstrap binary is not included in that image.
 
-1. Push this folder's contents to a Git repository connected to Render. `render.yaml` must be at the repository root.
-2. In Render, choose **New → Blueprint**, select the repository, and review the three resources before applying. Check plan costs/limits in your workspace before confirming.
-3. When prompted for `CORS_ALLOWED_ORIGINS`, enter exact frontend origins, e.g. `http://localhost:3000,https://<your-frontend-host>`; you can change it later in the service environment.
-4. Wait for the first deploy. The service applies SQLx migrations on startup. Check `/api/v1/health/ready`; it must report readiness after Postgres and Key Value are connected.
-5. Open `/docs` for interactive Swagger UI and `/openapi.json` for the machine-readable contract.
-6. The Blueprint asks for `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_NAME`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` (12–128 bytes). Its one-time `initialDeployHook` runs `/usr/local/bin/bootstrap_admin` after the first successful deploy. Confirm the hook log shows successful creation, then immediately remove all three bootstrap variables from the API service environment. Do not trigger or run the bootstrap binary a second time.
-7. Sign in at `/docs` as the bootstrap admin using `POST /auth/login`. Publish test privacy/terms through `POST /admin/consent-documents` using approved test wording (at least 20 characters per document). Then create test opportunities and exercise registration/application flows.
-8. Run the smoke test from a machine with curl installed: `BASE_URL=https://<your-api-host> ./scripts/smoke-test.sh`.
+After the API has deployed successfully and its migrations have run, create the initial administrator once from a local checkout. In PowerShell, set the following variables for the current terminal session, using the same Render database URL configured on the API service:
 
-### Environment variables expected on the API service
+```powershell
+$env:DATABASE_URL = "your Render PostgreSQL connection URL"
+$env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
+$env:BOOTSTRAP_ADMIN_NAME = "Initial Administrator"
+$env:BOOTSTRAP_ADMIN_PASSWORD = "use a unique password of 12-128 bytes"
+cargo run --bin bootstrap_admin
+```
 
-The Blueprint supplies `DATABASE_URL`, `REDIS_URL`, and a generated `JWT_SECRET`. Confirm the final deployed service URL and update `JWT_ISSUER` to match it if desired. Set CORS to exact frontend origins. Remove the three `BOOTSTRAP_ADMIN_*` values immediately after the one-time hook succeeds. Do not commit or share deployed secrets.
+The command inserts an email-verified account, gives it the `admin` role, and writes an audit event. Run it only once against the intended database. After it reports success, clear the temporary variables from that terminal:
+
+```powershell
+Remove-Item Env:DATABASE_URL, Env:BOOTSTRAP_ADMIN_EMAIL, Env:BOOTSTRAP_ADMIN_NAME, Env:BOOTSTRAP_ADMIN_PASSWORD
+```
+
+Then sign in using `POST /api/v1/auth/login` and publish the approved privacy notice and terms using `POST /api/v1/admin/consent-documents`. Configure `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `STORAGE_BACKEND`, and other runtime settings in the Render service environment; never commit or share their secret values.
 
 ### Testing notes
 
