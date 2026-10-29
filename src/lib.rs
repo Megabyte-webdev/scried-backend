@@ -3,6 +3,7 @@ pub mod api_docs;
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod email;
 pub mod events;
 pub mod middleware;
 pub mod opportunities;

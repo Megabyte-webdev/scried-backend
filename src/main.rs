@@ -29,6 +29,17 @@ async fn main() -> anyhow::Result<()> {
     let proof_storage = ProofStorage::new(&config)?;
     proof_storage.initialize().await?;
 
+    if let Some(email_config) = config.email.clone() {
+        let worker = scried_backend::email::EmailDeliveryWorker::new(email_config)?;
+        let email_db = db.clone();
+        tokio::spawn(async move {
+            worker.run(email_db).await;
+        });
+        tracing::info!("email outbox worker started");
+    } else {
+        tracing::warn!("email delivery is disabled; configure Resend and SMTP settings to deliver outbox messages");
+    }
+
     let host = config.host.clone();
     let port = config.port;
     let state = AppState::new(db, redis, config, proof_storage);

@@ -23,6 +23,7 @@ csv = "1"
 dotenvy = "0.15"
 http = "1"
 jsonwebtoken = "9.3"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }

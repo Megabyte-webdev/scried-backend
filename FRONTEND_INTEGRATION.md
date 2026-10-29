@@ -102,7 +102,9 @@ Treat the access token as short-lived and the refresh token as a credential. Pre
 1. `GET /consent-documents/current` to render the exact currently published privacy notice and terms.
 2. Obtain the current `version` field from the response's `data.documents` entries.
 3. `POST /auth/register` with `consent_accepted: true` and `consent_version` set to that version. The server stores the wording snapshot; don't send client-authored legal wording as proof of consent.
-4. The API creates an email-outbox record for email verification. Actual email delivery isn't configured in this starter until an outbox worker/provider is added. For testing, this is a deployment blocker for a complete self-service sign-up flow.
+4. The API creates an email-outbox record for email verification. When email settings are configured, a background worker sends through Resend if `RESEND_API_KEY` is present and falls back to SMTP only for an explicit Resend rate/quota rejection. If the Resend key is absent, SMTP is the primary sender. The email links to `/verify-email?token=...`; the frontend should submit the token to `POST /auth/verify-email`. Password-reset links use `/reset-password?token=...` and the frontend submits the token to `POST /auth/reset-password`. Both pages should remove the token from the address bar immediately and keep it out of analytics and logs.
+
+Configure `EMAIL_FROM`, `FRONTEND_BASE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, and `SMTP_PASSWORD` as server-side environment variables. `RESEND_API_KEY` is optional; when absent, SMTP sends directly. SMTP uses STARTTLS. If SMTP settings are absent, email records remain queued but are not delivered.
 
 An admin must publish consent documents through `POST /admin/consent-documents` before students can register. Do not invent production privacy/terms wording for a real launch; have it reviewed and approved first.
 

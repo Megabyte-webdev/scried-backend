@@ -2,6 +2,17 @@ use std::{ env, path::PathBuf };
 use url::Url;
 
 #[derive(Clone, Debug)]
+pub struct EmailConfig {
+    pub resend_api_key: Option<String>,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_username: String,
+    pub smtp_password: String,
+    pub from: String,
+    pub frontend_base_url: Url,
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub app_env: String,
     pub host: String,
@@ -19,6 +30,7 @@ pub struct Config {
     pub proof_storage: ProofStorageConfig,
     pub max_upload_bytes: usize,
     pub trust_proxy_headers: bool,
+    pub email: Option<EmailConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +105,7 @@ impl Config {
             }
             _ => anyhow::bail!("STORAGE_BACKEND must be either local or cloudinary"),
         };
+        let email = EmailConfig::from_env()?;
 
         Ok(Self {
             app_env: env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()),
@@ -130,7 +143,47 @@ impl Config {
                 ::var("TRUST_PROXY_HEADERS")
                 .map(|v| v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            email,
         })
+    }
+}
+
+impl EmailConfig {
+    fn from_env() -> anyhow::Result<Option<Self>> {
+        let provider_settings = [
+            "RESEND_API_KEY",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_USERNAME",
+            "SMTP_PASSWORD",
+        ];
+        let configured = provider_settings.iter().any(|name| {
+            env::var(name).map(|value| !value.trim().is_empty()).unwrap_or(false)
+        });
+        if !configured {
+            return Ok(None);
+        }
+
+        let frontend_base_url = Url::parse(&required("FRONTEND_BASE_URL")?)?;
+        anyhow::ensure!(
+            matches!(frontend_base_url.scheme(), "http" | "https") && frontend_base_url.host_str().is_some(),
+            "FRONTEND_BASE_URL must be an absolute HTTP or HTTPS URL"
+        );
+
+        let smtp_port = required("SMTP_PORT")?.parse::<u16>()?;
+        anyhow::ensure!(smtp_port > 0, "SMTP_PORT must be greater than zero");
+
+        Ok(Some(Self {
+            resend_api_key: env::var("RESEND_API_KEY")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            smtp_host: required("SMTP_HOST")?,
+            smtp_port,
+            smtp_username: required("SMTP_USERNAME")?,
+            smtp_password: required("SMTP_PASSWORD")?,
+            from: required("EMAIL_FROM")?,
+            frontend_base_url,
+        }))
     }
 }
 

@@ -2,7 +2,7 @@
 
 A backend foundation for Scried, an initiative of Bouwnce. It follows the supplied **Scried Backend Brief (28 October 2026)** and prioritises the first release: accounts/consent, opportunities/applications, program/event check-ins, private proof upload and verification, auditability, and impact reporting.
 
-> **Implementation status:** this is a source starter and not a deployed or audited production service. The local filesystem is a development storage adapter. The transactional email outbox is created by the API, but an email-delivery worker/provider must be connected before verification and password-reset emails can be delivered. CSV export is implemented; PDF/XLSX report rendering and several Phase 2/3 modules are not yet implemented. Review the checklist below before production.
+> **Implementation status:** this is a source starter and not a deployed or audited production service. The local filesystem is a development storage adapter. A transactional email outbox worker supports Resend delivery with SMTP fallback for explicit rate/quota rejections. Configure provider credentials and the frontend URL before verification and password-reset emails can be delivered. CSV export is implemented; PDF/XLSX report rendering and several Phase 2/3 modules are not yet implemented. Review the checklist below before production.
 
 ## Technology and operating model
 
@@ -220,7 +220,8 @@ Then sign in using `POST /api/v1/auth/login` and publish the approved privacy no
 
 - `/api/v1/health/live` checks that the process is up; `/api/v1/health/ready` also probes Postgres and Key Value.
 - The API reference is hosted at `/docs`; the raw schema is `/openapi.json`. The docs are a manually maintained starter contract, so keep it in sync when routes or request structs change.
-- Email verification and password-reset messages are queued in `email_outbox`; without a configured worker and transactional email provider, messages aren't delivered yet.
+- Email verification and password-reset messages are queued in `email_outbox`. The worker sends through Resend when `RESEND_API_KEY` is configured, using SMTP only when Resend clearly rejects for a rate/quota limit. If Resend is not configured, SMTP is the primary sender. Failed messages are retried with exponential backoff; successful outbox payloads are cleared.
+- To enable email delivery, set `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_BASE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, and `SMTP_PASSWORD` in the deployment environment. The frontend must handle `/verify-email?token=...` and `/reset-password?token=...` and submit the token to the corresponding API endpoint. SMTP uses STARTTLS.
 - `cargo test` and a Render build must pass before treating the deployment as working. This environment cannot run Rust/Cargo or Docker, so compilation is not verified here.
 - Don't run load or security tests against production data. Use disposable staging resources and synthetic student records.
 
